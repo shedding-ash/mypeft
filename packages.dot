@@ -1,0 +1,51 @@
+digraph "packages" {
+rankdir=BT
+charset="utf-8"
+"peft.tuners.lora" [color="black", label=<peft.tuners.lora>, shape="box", style="solid"];
+"peft.tuners.lora.aqlm" [color="black", label=<peft.tuners.lora.aqlm>, shape="box", style="solid"];
+"peft.tuners.lora.awq" [color="black", label=<peft.tuners.lora.awq>, shape="box", style="solid"];
+"peft.tuners.lora.bnb" [color="black", label=<peft.tuners.lora.bnb>, shape="box", style="solid"];
+"peft.tuners.lora.config" [color="black", label=<peft.tuners.lora.config>, shape="box", style="solid"];
+"peft.tuners.lora.dora" [color="black", label=<peft.tuners.lora.dora>, shape="box", style="solid"];
+"peft.tuners.lora.eetq" [color="black", label=<peft.tuners.lora.eetq>, shape="box", style="solid"];
+"peft.tuners.lora.eva" [color="black", label=<peft.tuners.lora.eva>, shape="box", style="solid"];
+"peft.tuners.lora.gptq" [color="black", label=<peft.tuners.lora.gptq>, shape="box", style="solid"];
+"peft.tuners.lora.hqq" [color="black", label=<peft.tuners.lora.hqq>, shape="box", style="solid"];
+"peft.tuners.lora.layer" [color="black", label=<peft.tuners.lora.layer>, shape="box", style="solid"];
+"peft.tuners.lora.model" [color="black", label=<peft.tuners.lora.model>, shape="box", style="solid"];
+"peft.tuners.lora.torchao" [color="black", label=<peft.tuners.lora.torchao>, shape="box", style="solid"];
+"peft.tuners.lora.tp_layer" [color="black", label=<peft.tuners.lora.tp_layer>, shape="box", style="solid"];
+"peft.tuners.lora" -> "peft.tuners.lora.bnb" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora" -> "peft.tuners.lora.config" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora" -> "peft.tuners.lora.eetq" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora" -> "peft.tuners.lora.eva" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora" -> "peft.tuners.lora.gptq" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora" -> "peft.tuners.lora.model" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.aqlm" -> "peft.tuners.lora.aqlm" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.aqlm" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.awq" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.bnb" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.eetq" -> "peft.tuners.lora.eetq" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.eetq" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.eva" -> "peft.tuners.lora.config" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.eva" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.gptq" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.hqq" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.layer" -> "peft.tuners.lora.config" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.layer" -> "peft.tuners.lora.dora" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.aqlm" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.awq" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.bnb" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.config" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.eetq" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.gptq" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.hqq" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.torchao" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.model" -> "peft.tuners.lora.tp_layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.torchao" -> "peft.tuners.lora.config" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.torchao" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.torchao" -> "peft.tuners.lora.torchao" [arrowhead="open", arrowtail="none"];
+"peft.tuners.lora.tp_layer" -> "peft.tuners.lora.layer" [arrowhead="open", arrowtail="none"];
+}

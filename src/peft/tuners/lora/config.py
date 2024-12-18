@@ -216,6 +216,103 @@ class LoraConfig(PeftConfig):
             Defaults to `False`. Whether to enable the bias term for the LoRA B parameter. Typically, this should be
             disabled. The main use case for this is when the LoRA weights were extracted from fully fine-tuned
             parameters so the bias of those parameters can be taken into account.
+        这是一个配置类，用于存储 [`LoraModel`] 的配置。
+
+        **参数：**
+
+        - **r (`int`)：**
+        - LoRA 注意力维度（即“秩”）。
+
+        - **target_modules (`Optional[Union[List[str], str]]`)：**
+        - 要应用适配器的模块名称。如果指定了此参数，则只有具有指定名称的模块会被替换。当传递字符串时，会进行正则表达式匹配。
+            当传递字符串列表时，会进行精确匹配或检查模块名称是否以列表中的任何字符串结尾。
+            如果指定为 `'all-linear'`，则会选择所有线性/Conv1D 模块（如果模型是 `PreTrainedModel`，则排除输出层）。
+            如果未指定此参数，模块将根据模型架构选择。如果架构未知，则会引发错误——在这种情况下，您应手动指定目标模块。
+
+        - **exclude_modules (`Optional[Union[List[str], str]]`)：**
+        - 不应用适配器的模块名称。当传递字符串时，会进行正则表达式匹配。
+            当传递字符串列表时，会进行精确匹配或检查模块名称是否以列表中的任何字符串结尾。
+
+        - **lora_alpha (`int`)：**
+        - LoRA 缩放的 alpha 参数。
+
+        - **lora_dropout (`float`)：**
+        - LoRA 层的 dropout 概率。
+
+        - **fan_in_fan_out (`bool`)：**
+        - 如果设置为 `True`，则替换的层以 (fan_in, fan_out) 的形式存储权重。
+            例如，gpt-2 使用 `Conv1D`，其权重以 (fan_in, fan_out) 的形式存储，因此应设置为 `True`。
+
+        - **bias (`str`)：**
+        - LoRA 的偏置类型。可以是 `'none'`、`'all'` 或 `'lora_only'`。
+            如果为 `'all'` 或 `'lora_only'`，相应的偏置将在训练期间更新。
+            请注意，这意味着即使禁用适配器，模型也不会生成与未适配的基础模型相同的输出。
+
+        - **use_rslora (`bool`)：**
+        - 当设置为 `True` 时，使用 [Rank-Stabilized LoRA](https://doi.org/10.48550/arXiv.2312.03732)，
+            它将适配器缩放因子设置为 `lora_alpha/math.sqrt(r)`，因为研究表明这种方式效果更好。
+            否则，将使用原始默认值 `lora_alpha/r`。
+
+        - **modules_to_save (`List[str]`)：**
+        - 除了适配器层之外，要设置为可训练并保存到最终检查点的模块列表。
+
+        - **init_lora_weights (`bool` | `Literal["gaussian", "eva", "olora", "pissa", "pissa_niter_[number of iters]", "loftq"]`)：**
+        - 适配器层权重的初始化方式。传递 `True`（默认）将使用 Microsoft 参考实现中的默认初始化。
+            传递 `'gaussian'` 将使用高斯初始化，并根据 LoRA 秩进行缩放。
+            设置为 `False` 会导致完全随机初始化，不推荐使用。
+            传递 `'loftq'` 将使用 LoftQ 初始化。
+            传递 `'eva'` 将使用 [Explained Variance Adaptation](https://arxiv.org/abs/2410.07170) 的数据驱动初始化。
+                EVA 基于层输入激活的 SVD 初始化 LoRA，由于其能够适应微调数据，因此实现了 SOTA 性能。
+            传递 `'olora'` 将使用 OLoRA 初始化。传递 `'pissa'` 将使用 
+                [Principal Singular values and Singular vectors Adaptation (PiSSA)](https://arxiv.org/abs/2404.02948) 的初始化，
+                它比 LoRA 收敛更快，并最终实现更优的性能。此外，PiSSA 相比 QLoRA 减少了量化误差，进一步提升了效果。
+            传递 `'pissa_niter_[number of iters]'` 将使用基于快速 SVD 的 PiSSA 初始化，
+                其中 `[number of iters]` 表示执行 FSVD 的子空间迭代次数，必须是非负整数。
+                当 `[number of iters]` 设置为 16 时，可以在几秒钟内完成 7B 模型的初始化，训练效果与使用 SVD 相当。
+
+        - **layers_to_transform (`Union[List[int], int]`)：**
+        - 要转换的层索引。如果传递整数列表，则适配器将应用于指定索引的层。如果传递单个整数，则适配器将应用于该索引处的层。
+
+        - **layers_pattern (`Optional[Union[List[str], str]]`)：**
+        - 层模式名称，仅在 `layers_to_transform` 不为 `None` 时使用。
+            这应该指向模型的 `nn.ModuleList`，通常称为 `'layers'` 或 `'h'`。
+
+        - **rank_pattern (`dict`)：**
+        - 从层名称或正则表达式到秩的映射，这些秩与默认秩 `r` 不同。
+
+        - **alpha_pattern (`dict`)：**
+        - 从层名称或正则表达式到 alpha 的映射，这些 alpha 与默认 alpha `lora_alpha` 不同。
+
+        - **megatron_config (`Optional[dict]`)：**
+        - Megatron 的 TransformerConfig 参数。用于创建 LoRA 的并行线性层。可以通过 `core_transformer_config_from_args(get_args())` 获取，这两个函数来自 Megatron。这些参数将用于初始化 Megatron 的 TransformerConfig。当您想将 LoRA 应用于 Megatron 的 ColumnParallelLinear 和 RowParallelLinear 层时，需要指定此参数。
+
+        - **megatron_core (`Optional[str]`)：**
+        - 从 Megatron 使用的核心模块，默认为 `"megatron.core"`。
+
+        - **loftq_config (`Optional[LoftQConfig]`)：**
+        - LoftQ 的配置。如果此参数不为 `None`，则将使用 LoftQ 对骨干权重进行量化并初始化 LoRA 层。
+            同时需要传递 `init_lora_weights='loftq'`。
+            请注意，在这种情况下不应传递量化模型，因为 LoftQ 会自行量化模型。
+
+        - **eva_config (`Optional[EvaConfig]`)：**
+        - EVA 的配置。至少需要设置数据集参数（使用与微调相同的数据集）。
+
+        - **use_dora (`bool`)：**
+        - 启用“权重分解的低秩适配”（DoRA）。该技术将权重的更新分解为幅度和方向两部分。
+            方向由普通 LoRA 处理，而幅度由单独的可学习参数处理。这可以提高 LoRA 在低秩时的性能。
+            目前，DoRA 仅支持线性和 Conv2D 层。DoRA 比纯 LoRA 引入更大的开销，因此建议在推理时合并权重。
+            更多信息请参见 [https://arxiv.org/abs/2402.09353](https://arxiv.org/abs/2402.09353)。
+
+        - **layer_replication (`List[Tuple[int, int]]`)：**
+        - 根据指定的范围堆叠原始模型层，构建新的层堆栈。这允许在不复制基础模型权重的情况下扩展（或缩小）模型。
+            新层都将附加独立的 LoRA 适配器。
+
+        - **runtime_config (`LoraRuntimeConfig`)：**
+        - 运行时配置（不保存或恢复）。
+
+        - **lora_bias (`bool`)：**
+        - 默认为 `False`。是否为 LoRA 的 B 参数启用偏置项。通常应禁用此选项。
+            主要用例是当 LoRA 权重从完全微调的参数中提取时，可以考虑这些参数的偏置。
     """
 
     r: int = field(default=8, metadata={"help": "Lora attention dimension"})
