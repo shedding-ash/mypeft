@@ -938,13 +938,14 @@ class Embedding(nn.Module, LoraLayer):
         return "lora." + rep
 
 # conv层的实现,被继承的父类
-class _ConvNd(nn.Module, LoraLayer):
+class _ConvNd(nn.Module, CLoraLayer):
     # Lora implemented in a conv(2,3)d layer
     def __init__(
         self,
         base_layer: nn.Module,
         adapter_name: str,
-        r: int = 0,
+        r1: int = 0,
+        r2: int = 0,
         lora_alpha: int = 1,
         lora_dropout: float = 0.0,
         init_lora_weights: Union[bool, str] = True,
@@ -961,7 +962,8 @@ class _ConvNd(nn.Module, LoraLayer):
 
         self.update_layer(
             adapter_name,
-            r,
+            r1,
+            r2,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             init_lora_weights=init_lora_weights,
@@ -971,12 +973,13 @@ class _ConvNd(nn.Module, LoraLayer):
         )
 
     def update_layer(
-        self, adapter_name, r, lora_alpha, lora_dropout, init_lora_weights, use_rslora, use_dora, lora_bias
+        self, adapter_name, r1, r2, lora_alpha, lora_dropout, init_lora_weights, use_rslora, use_dora, lora_bias
     ):
-        if r <= 0:
+        if r1 <= 0 or r2 <= 0:
             raise ValueError(f"`r` should be a positive integer value but the value passed is {r}")
 
-        self.r[adapter_name] = r
+        self.r1[adapter_name] = r1
+        self.r2[adapter_name] = r2
         self.lora_alpha[adapter_name] = lora_alpha
         if lora_dropout > 0.0:
             lora_dropout_layer = nn.Dropout(p=lora_dropout)
@@ -991,14 +994,15 @@ class _ConvNd(nn.Module, LoraLayer):
         padding = base_layer.padding
         conv_layer = type(base_layer)
         out_kernel = out_stride = (1,) * (self._kernel_dim - 2)
-        self.lora_A[adapter_name] = conv_layer(self.in_features, r, kernel_size, stride, padding, bias=False)
-        self.lora_B[adapter_name] = conv_layer(r, self.out_features, out_kernel, out_stride, bias=lora_bias)
+        self.lora_A[adapter_name] = conv_layer(self.in_features, r1, kernel_size, stride, padding, bias=False)
+        self.lora_B[adapter_name] = conv_layer(r2, self.out_features, out_kernel, out_stride, bias=lora_bias)
+        self.lora_C[adapter_name] = conv_layer(r1, r2, out_kernel, out_stride, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
 
         if use_rslora:
-            self.scaling[adapter_name] = lora_alpha / math.sqrt(r)
+            self.scaling[adapter_name] = lora_alpha / math.sqrt(r2)
         else:
-            self.scaling[adapter_name] = lora_alpha / r
+            self.scaling[adapter_name] = lora_alpha / r2
 
         if init_lora_weights == "loftq":
             self.loftq_init(adapter_name)
@@ -1144,6 +1148,7 @@ class _ConvNd(nn.Module, LoraLayer):
                 if self.lora_bias[active_adapter]:
                     self.get_base_layer().bias.data -= self.lora_B[active_adapter].bias
 
+    # Clora重构
     def get_delta_weight(self, adapter) -> torch.Tensor:
         """
         Compute the delta weight for the given adapter.
@@ -1162,17 +1167,23 @@ class _ConvNd(nn.Module, LoraLayer):
 
         weight_A = self.lora_A[adapter].weight
         weight_B = self.lora_B[adapter].weight
+        weight_C = self.lora_C[adapter].weight
 
         if cast_to_fp32:
             weight_A = weight_A.float()
             weight_B = weight_B.float()
+            weight_C = weight_C.float()
 
         # https://github.com/bmaltais/kohya_ss/blob/feb6728762a8f463d15ba936d189d4c3abfaa1ab/networks/lora.py#L117
         if self.get_base_layer().weight.size()[2:4] == (1, 1):
             # conv2d 1x1
-            output_tensor = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(
-                3
-            ) * self.scaling[adapter]
+            # output_tensor = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(
+            #     3
+            # ) * self.scaling[adapter]
+            output_tensor = (weight_A.squeeze(3).squeeze(2)
+                            @ weight_C.squeeze(3).squeeze(2)
+                            @ weight_B.squeeze(3).squeeze(2)
+                            ).unsqueeze(2).unsqueeze(3) * self.scaling[adapter]
         else:
             output_tensor = (
                 self.conv_fn(
@@ -1188,9 +1199,11 @@ class _ConvNd(nn.Module, LoraLayer):
             # cast back the weights
             self.lora_A[adapter].weight.data = weight_A.to(dtype)
             self.lora_B[adapter].weight.data = weight_B.to(dtype)
+            self.lora_C[adapter].weight.data = weight_C.to(dtype)
 
         return output_tensor
 
+    # Clora重构
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         self._check_forward_args(x, *args, **kwargs)
         adapter_names = kwargs.pop("adapter_names", None)
@@ -1212,12 +1225,13 @@ class _ConvNd(nn.Module, LoraLayer):
                     continue
                 lora_A = self.lora_A[active_adapter]
                 lora_B = self.lora_B[active_adapter]
+                lora_C = self.lora_C[active_adapter]
                 dropout = self.lora_dropout[active_adapter]
                 scaling = self.scaling[active_adapter]
                 x = x.to(lora_A.weight.dtype)
 
                 if not self.use_dora[active_adapter]:
-                    result = result + lora_B(lora_A(dropout(x))) * scaling
+                    result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
                 else:
                     x = dropout(x)
                     result = result + self.lora_magnitude_vector[active_adapter](
@@ -1233,7 +1247,7 @@ class _ConvNd(nn.Module, LoraLayer):
 
     def __repr__(self) -> str:
         rep = super().__repr__()
-        return "lora." + rep
+        return "Clora." + rep
 
 
 class Conv2d(_ConvNd):
@@ -1259,7 +1273,7 @@ class Conv3d(_ConvNd):
     def _get_dora_layer_class(self):
         return DoraConv3dLayer
 
-
+# 下游调用方法，根据不同的 target 类型（通常是 PyTorch 的层或模块）动态地创建和返回新的模块（Layer类的实例）
 def dispatch_default(
     target: torch.nn.Module,
     adapter_name: str,
