@@ -36,9 +36,11 @@ from lora import LoraLayer
 
 class CLoraLayer(BaseTunerLayer):
     # All names of layers that may contain (trainable) adapter weights
-    adapter_layer_names = ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B")
+    adapter_layer_names = ("lora_A", "lora_B", "lora_C","lora_embedding_A", "lora_embedding_B")
     # All names of other parameters that may contain adapter-related parameters
     other_param_names = ("r1", "r2", "lora_alpha", "scaling", "lora_dropout")
+    
+    # 初始化类属性,根据传入的base_layer初始化in_features和out_features
     def __init__(self, base_layer: nn.Module, ephemeral_gpu_offload: bool = False, **kwargs) -> None:
         self.base_layer = base_layer
         # self.r = {}
@@ -107,6 +109,7 @@ class CLoraLayer(BaseTunerLayer):
         self.in_features = in_features
         self.out_features = out_features
 
+    # 线性层的实现,在线性层init函数中调用，目标是一个adapter，检查r，初始化dropout，创建lora并初始化权重，将创建的adapter置为活动adapter
     def update_layer(
         self,
         adapter_name,
@@ -120,10 +123,10 @@ class CLoraLayer(BaseTunerLayer):
         lora_bias: bool = False,
     ):
         # This code works for linear layers, override for other layer types
-        if r <= 0:
-            raise ValueError(f"`r` should be a positive integer value but the value passed is {r}")
+        if r1 <= 0 or r2 <= 0:
+            raise ValueError(f"`r1 or r2` should be a positive integer value but the value passed is {r1,r2}")
 
-        self.r[adapter_name] = r
+        #self.r[adapter_name] = r
         self.r1[adapter_name] = r1
         self.r2[adapter_name] = r2
         self.lora_alpha[adapter_name] = lora_alpha
@@ -133,17 +136,21 @@ class CLoraLayer(BaseTunerLayer):
             lora_dropout_layer = nn.Identity()
 
         self.lora_dropout.update(nn.ModuleDict({adapter_name: lora_dropout_layer}))
-        # Actual trainable parameters
-        self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
-        self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
+        
+        # 关键代码，初始化ABC的权重
+        self.lora_A[adapter_name] = nn.Linear(self.in_features, r1, bias=False)
+        self.lora_B[adapter_name] = nn.Linear(r2, self.out_features, bias=lora_bias)
+        self.lora_C[adapter_name] = nn.Linear(r1, r2, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
 
+        # 待敲定的点1 scaling的计算根据r1还是r2，先尝试r2
         if use_rslora:
-            self.scaling[adapter_name] = lora_alpha / math.sqrt(r)
+            self.scaling[adapter_name] = lora_alpha / math.sqrt(r2)
         else:
-            self.scaling[adapter_name] = lora_alpha / r
+            self.scaling[adapter_name] = lora_alpha / r2
 
         # for inits that require access to the base weight, use gather_param_ctx so that the weight is gathered when using DeepSpeed
+        # adapter中lora的初始化方式，先只改默认的初始化方式，即reset_lora_parameters
         if isinstance(init_lora_weights, str) and init_lora_weights.startswith("pissa"):
             with gather_params_ctx(self.get_base_layer().weight):
                 self.pissa_init(adapter_name, init_lora_weights)
@@ -168,6 +175,7 @@ class CLoraLayer(BaseTunerLayer):
 
         self.set_adapter(self.active_adapters)
 
+    # 重置lora的参数，初始化A和B，C, A的初始化为kaiming和normal，B和C初始化为0，embedding层没动
     def reset_lora_parameters(self, adapter_name, init_lora_weights):
         if init_lora_weights is False:
             return
@@ -178,10 +186,11 @@ class CLoraLayer(BaseTunerLayer):
                 # https://github.com/microsoft/LoRA/blob/a0a92e0f26c067cf94747bdbf1ce73793fa44d19/loralib/layers.py#L124
                 nn.init.kaiming_uniform_(self.lora_A[adapter_name].weight, a=math.sqrt(5))
             elif init_lora_weights.lower() == "gaussian":
-                nn.init.normal_(self.lora_A[adapter_name].weight, std=1 / self.r[adapter_name])
+                nn.init.normal_(self.lora_A[adapter_name].weight, std=1 / self.r1[adapter_name])
             else:
                 raise ValueError(f"Unknown initialization {init_lora_weights=}")
             nn.init.zeros_(self.lora_B[adapter_name].weight)
+            nn.init.zeros_(self.lora_C[adapter_name].weight)
             if self.lora_bias[adapter_name]:
                 nn.init.zeros_(self.lora_B[adapter_name].bias)
         if adapter_name in self.lora_embedding_A.keys():
@@ -319,19 +328,23 @@ class CLoraLayer(BaseTunerLayer):
         )
         self.lora_magnitude_vector[adapter_name] = dora_layer
 
+    # merge函数调用 将给定的 key 和 value 存储到 self._caches 字典中
     def _cache_store(self, key: str, value: Any) -> None:
         self._caches[key] = value
-
+    # unmerge函数调用 从 _caches 字典中移除并返回指定 key 对应的值
     def _cache_pop(self, key: str) -> Any:
         value = self._caches.pop(key)
         return value
-
+    
+    # 下游调用的方法，根据给定的缩放因子（scale）调整 LoRA（低秩适应）层的缩放因子。
+    # 它会遍历当前激活的适配器，并且更新每个适配器的缩放因子 
     def set_scale(self, adapter, scale):
         if adapter not in self.scaling:
             # Ignore the case where the adapter is not in the layer
             return
         self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
 
+    # 下游调用的方法，根据给定的 scale 因子来调整当前激活适配器的缩放因子
     def scale_layer(self, scale: float) -> None:
         if scale == 1:
             return
@@ -342,16 +355,18 @@ class CLoraLayer(BaseTunerLayer):
 
             self.scaling[active_adapter] *= scale
 
+    # 下游调用的方法，恢复激活的适配器缩放因子，或者基于给定的 scale 值对其进行逆缩放
     def unscale_layer(self, scale=None) -> None:
         for active_adapter in self.active_adapters:
             if active_adapter not in self.lora_A.keys():
                 continue
 
             if scale is None:
-                self.scaling[active_adapter] = self.lora_alpha[active_adapter] / self.r[active_adapter]
+                self.scaling[active_adapter] = self.lora_alpha[active_adapter] / self.r1[active_adapter]
             else:
                 self.scaling[active_adapter] /= scale
 
+    # forward调用 检查前向传播函数的输入参数是否符合当前模型配置，尤其是与adapter_names相关的检查。
     def _check_forward_args(self, x, *args, **kwargs):
         """Check if the arguments are compatible with the configs and state of the model"""
         adapter_names = kwargs.get("adapter_names", None)
@@ -378,7 +393,9 @@ class CLoraLayer(BaseTunerLayer):
             if self.use_dora.get(adapter_name, False):
                 msg = "Cannot pass `adapter_names` when DoRA is enabled."
                 raise ValueError(msg)
-
+    
+    # forward调用 允许在同一个批次中混合多个适配器。
+    # 这个方法适用于在推理时动态选择不同的 LoRA 适配器，并将它们应用到同一批次的不同部分。
     def _mixed_batch_forward(
         self, x: torch.Tensor, *args: Any, adapter_names: list[str], **kwargs: Any
     ) -> torch.Tensor:
@@ -400,13 +417,14 @@ class CLoraLayer(BaseTunerLayer):
 
             lora_A = self.lora_A[active_adapter]
             lora_B = self.lora_B[active_adapter]
+            lora_C = self.lora_C[active_adapter]
             dropout = self.lora_dropout[active_adapter]
             scaling = self.scaling[active_adapter]
 
             # getting the sub-batch, passing it to LoRA layers and updating the corresponding indices of the linear
             # layer output
             sub_batch = x[sub_batch_indices_list[i]].to(lora_A.weight.dtype)
-            lora_output = lora_B(lora_A(dropout(sub_batch))) * scaling
+            lora_output = lora_B(lora_C(lora_A(dropout(sub_batch)))) * scaling
             result[sub_batch_indices_list[i]] += lora_output.to(torch_result_dtype)
 
         return result
@@ -422,13 +440,14 @@ class CLoraLayer(BaseTunerLayer):
 #  ------------------------------------------------------------------------------------------
 
 
-class Linear(nn.Module, LoraLayer):
+class Linear(nn.Module, CLoraLayer):
     # Lora implemented in a dense layer
     def __init__(
         self,
         base_layer,
         adapter_name: str,
-        r: int = 0,
+        r1: int = 8,
+        r2: int = 8,
         lora_alpha: int = 1,
         lora_dropout: float = 0.0,
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
@@ -446,7 +465,8 @@ class Linear(nn.Module, LoraLayer):
         self._active_adapter = adapter_name
         self.update_layer(
             adapter_name,
-            r,
+            r1,
+            r2,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
             init_lora_weights=init_lora_weights,
@@ -456,6 +476,7 @@ class Linear(nn.Module, LoraLayer):
         )
         self.is_target_conv_1d_layer = is_target_conv_1d_layer
 
+    # 下游调用 用于将适配器的权重合并到基础权重中
     def merge(self, safe_merge: bool = False, adapter_names: Optional[list[str]] = None) -> None:
         """
         Merge the active adapter weights into the base weights
@@ -566,6 +587,7 @@ class Linear(nn.Module, LoraLayer):
                 if self.lora_bias[active_adapter]:
                     self.get_base_layer().bias.data -= self.lora_B[active_adapter].bias
 
+    # 添加了loraC的权重计算
     def get_delta_weight(self, adapter) -> torch.Tensor:
         """
         Compute the delta weight for the given adapter.
@@ -584,12 +606,14 @@ class Linear(nn.Module, LoraLayer):
 
         weight_A = self.lora_A[adapter].weight
         weight_B = self.lora_B[adapter].weight
+        weight_C = self.lora_C[adapter].weight
 
         if cast_to_fp32:
             weight_A = weight_A.float()
             weight_B = weight_B.float()
+            weight_C = weight_C.float()
 
-        output_tensor = transpose(weight_B @ weight_A, self.fan_in_fan_out) * self.scaling[adapter]
+        output_tensor = transpose(weight_B @ (weight_C @ weight_A), self.fan_in_fan_out) * self.scaling[adapter]
 
         if cast_to_fp32:
             output_tensor = output_tensor.to(dtype=dtype)
@@ -597,6 +621,7 @@ class Linear(nn.Module, LoraLayer):
             # cast back the weights
             self.lora_A[adapter].weight.data = weight_A.to(dtype)
             self.lora_B[adapter].weight.data = weight_B.to(dtype)
+            self.lora_C[adapter].weight.data = weight_C.to(dtype)
 
         return output_tensor
 
@@ -612,6 +637,7 @@ class Linear(nn.Module, LoraLayer):
             result = self._mixed_batch_forward(x, *args, adapter_names=adapter_names, **kwargs)
         elif self.merged:
             result = self.base_layer(x, *args, **kwargs)
+        # key code
         else:
             result = self.base_layer(x, *args, **kwargs)
             torch_result_dtype = result.dtype
@@ -620,12 +646,13 @@ class Linear(nn.Module, LoraLayer):
                     continue
                 lora_A = self.lora_A[active_adapter]
                 lora_B = self.lora_B[active_adapter]
+                lora_C = self.lora_C[active_adapter]
                 dropout = self.lora_dropout[active_adapter]
                 scaling = self.scaling[active_adapter]
                 x = x.to(lora_A.weight.dtype)
 
                 if not self.use_dora[active_adapter]:
-                    result = result + lora_B(lora_A(dropout(x))) * scaling
+                    result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
                 else:
                     if isinstance(dropout, nn.Identity) or not self.training:
                         base_result = result
@@ -648,8 +675,9 @@ class Linear(nn.Module, LoraLayer):
 
     def __repr__(self) -> str:
         rep = super().__repr__()
-        return "lora." + rep
+        return "Clora." + rep
 
+# embedding层的实现,先不改
 class Embedding(nn.Module, LoraLayer):
     # LoRA implemented in a Embedding layer
     def __init__(
@@ -909,7 +937,7 @@ class Embedding(nn.Module, LoraLayer):
         rep = super().__repr__()
         return "lora." + rep
 
-
+# conv层的实现,被继承的父类
 class _ConvNd(nn.Module, LoraLayer):
     # Lora implemented in a conv(2,3)d layer
     def __init__(
