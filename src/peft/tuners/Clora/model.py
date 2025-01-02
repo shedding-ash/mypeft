@@ -1,94 +1,200 @@
-import warnings
-from dataclasses import asdict
-from enum import Enum
-from typing import List, Optional
-
 import torch
-from torch import nn
-from tqdm import tqdm
+from __future__ import annotations
+import operator
 
-from peft.tuners.tuners_utils import (
-    BaseTuner,
-    BaseTunerLayer,
-    check_target_module_exists,
-    onload_layer,
+from tuners.lora.model import LoraModel
+from tuners.lora.config import LoraConfig
+
+
+from utils import (
+    get_quantization_config,
 )
-from peft.utils import (
-    TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING,
-    ModulesToSaveWrapper,
-    _get_submodules,
-)
+from import_utils import is_bnb_4bit_available, is_bnb_available
+from utils.other import get_pattern_key
 
-from .config import CLoraConfig
-from .layer import BOFTLayer, Conv2d, Linear
+# layer
+from .layer import Conv2d, CLoraLayer, dispatch_default
+from tuners_utils import BaseTunerLayer
+from tuners.lora.layer import LoraLayer
+## quantization
+from tuners.lora.aqlm import dispatch_aqlm
+from tuners.lora.awq import dispatch_awq
+from tuners.lora.eetq import dispatch_eetq
+from tuners.lora.gptq import dispatch_gptq
+from tuners.lora.hqq import dispatch_hqq
+from tuners.lora.torchao import dispatch_torchao
+from tuners.lora.tp_layer import dispatch_megatron
 
-class CLoraModel(BaseTuner):
+class CLoraModel(LoraModel):
     """
+    似乎只用改两个，一个是layer的替换，一个是创建新的module
+    """
+    def __init__(self, model, config, adapter_name, low_cpu_mem_usage: bool = False) -> None:
+        super().__init__(model, config, adapter_name, low_cpu_mem_usage=low_cpu_mem_usage)
     
-    """
-    def __init__(self, model, config, adapter_name):
-        super().__init__(model, config, adapter_name)
-    def _check_new_adapter_config(self, config: CLoraConfig) -> None:
-        """
-        A helper method to check the config when a new adapter is being added.
-
-        Raise a ValueError if there is something wrong with the config or if it conflicts with existing adapters.
-
-        """
-        # TODO: there should be a check if any of the existing adapters actually has bias != "none", or else the check
-        # does not fully correspond to the error message.
-        if (len(self.peft_config) > 1) and (config.bias != "none"):
-            raise ValueError(
-                f"{self.__class__.__name__} supports only 1 adapter with bias. When using multiple adapters, "
-                "set bias to 'none' for all adapters."
-            )
-
-    @staticmethod
-    def _check_target_module_exists(boft_config, key):
-        return check_target_module_exists(boft_config, key)
-
+    # 解析config 并用config生成一个新的adapter ,替换目标module
+    # 创建kwargs，然后调用create和replace方法 
     def _create_and_replace(
         self,
-        boft_config,
+        lora_config,
         adapter_name,
         target,
         target_name,
         parent,
         current_key,
-        **optional_kwargs,
     ):
+        r"""
+        Inplace replacement of the target module with the adapter layer. This method needs to be overridden by all the
+        tuner classes.
+
+        Check `peft.tuners.lora.LoraModel._create_and_replace` for an example.
+
+        Args:
+            peft_config (`PeftConfig`):
+                The adapter config.
+            adapter_name (`str`):
+                The adapter name.
+            target (`nn.Module`):
+                The target module.
+            target_name (`str`):
+                The target module's name.
+            parent (`nn.Module`):
+                The parent module.
+            current_key (`str`): 
+                The key of the current target being adapted.
+        """
         if current_key is None:
             raise ValueError("Current Key shouldn't be `None`")
 
-        bias = hasattr(target, "bias") and target.bias is not None
-        kwargs = {
-            "boft_block_size": boft_config.boft_block_size,
-            "boft_block_num": boft_config.boft_block_num,
-            "boft_n_butterfly_factor": boft_config.boft_n_butterfly_factor,
-            "boft_dropout": boft_config.boft_dropout,
-            "fan_in_fan_out": boft_config.fan_in_fan_out,
-            "init_weights": boft_config.init_weights,
-        }
-        kwargs["bias"] = bias
+        # Regexp matching - Find key which matches current target_name in patterns provided
+        r_key = get_pattern_key(lora_config.rank_pattern.keys(), current_key)
+        r1_key = get_pattern_key(lora_config.rank_pattern.keys(), current_key)
+        r2_key = get_pattern_key(lora_config.rank_pattern.keys(), current_key)
+        alpha_key = get_pattern_key(lora_config.alpha_pattern.keys(), current_key)
+        r = lora_config.rank_pattern.get(r_key, lora_config.r)
+        r1 = lora_config.rank_pattern.get(r1_key, lora_config.r1)
+        r2 = lora_config.rank_pattern.get(r2_key, lora_config.r2)
+        alpha = lora_config.alpha_pattern.get(alpha_key, lora_config.lora_alpha)
 
-        # If it is not a BOFTLayer, create a new module, else update it with new adapters
-        if not isinstance(target, BOFTLayer):
-            new_module = self._create_new_module(boft_config, adapter_name, target, **kwargs)
+        kwargs = {
+            "r": r,
+            "r1": r1,
+            "r2": r2,
+            "lora_alpha": alpha,
+            "lora_dropout": lora_config.lora_dropout,
+            "fan_in_fan_out": lora_config.fan_in_fan_out,
+            "init_lora_weights": lora_config.init_lora_weights,
+            "use_rslora": lora_config.use_rslora,
+            "use_dora": lora_config.use_dora,
+            "ephemeral_gpu_offload": lora_config.runtime_config.ephemeral_gpu_offload,
+            "lora_bias": lora_config.lora_bias,
+            "loaded_in_8bit": getattr(self.model, "is_loaded_in_8bit", False),
+            "loaded_in_4bit": getattr(self.model, "is_loaded_in_4bit", False),
+        }
+        # for torchao merging, we need the get_apply_tensor_subclass from the quantization config
+        try:
+            kwargs["get_apply_tensor_subclass"] = operator.attrgetter(
+                "hf_quantizer.quantization_config.get_apply_tensor_subclass"
+            )(self.model)
+        except AttributeError:
+            pass
+
+        quant_methods = ["gptq", "aqlm", "awq"]
+        for quant_method in quant_methods:
+            quantization_config = get_quantization_config(self.model, method=quant_method)
+            if quantization_config is not None:
+                kwargs[f"{quant_method}_quantization_config"] = quantization_config
+
+        # note: AdaLoraLayer is a subclass of LoraLayer, we need to exclude it
+        from peft.tuners.adalora import AdaLoraLayer
+
+        if isinstance(target, CLoraLayer) and not isinstance(target, AdaLoraLayer):
+            target.update_layer(
+                adapter_name,
+                r,
+                r1,
+                r2,
+                lora_alpha=alpha,
+                lora_dropout=lora_config.lora_dropout,
+                init_lora_weights=lora_config.init_lora_weights,
+                use_rslora=lora_config.use_rslora,
+                use_dora=lora_config.use_dora,
+                lora_bias=lora_config.lora_bias,
+            )
+        else:
+            new_module = self._create_new_module(lora_config, adapter_name, target, **kwargs)
             if adapter_name not in self.active_adapters:
                 # adding an additional adapter: it is not automatically trainable
                 new_module.requires_grad_(False)
             self._replace_module(parent, target_name, new_module, target)
-        else:
-            target.update_layer(
-                adapter_name,
-                boft_block_size=boft_config.boft_block_size,
-                boft_block_num=boft_config.boft_block_num,
-                boft_n_butterfly_factor=boft_config.boft_n_butterfly_factor,
-                boft_dropout=boft_config.boft_dropout,
-                init_weights=boft_config.init_weights,
+    
+    @staticmethod
+    def _create_new_module(lora_config, adapter_name, target, **kwargs):
+        # Collect dispatcher functions to decide what backend to use for the replaced LoRA layer. The order matters,
+        # because the first match is always used. Therefore, the default layers should be checked last.
+        dispatchers = []
+
+        if lora_config._custom_modules:
+            # Experimental custom LoRA module support. Allows users to pass a custom mapping for unsupported layer
+            # types by impelementing their own LoRA layers.
+            def dynamic_dispatch_func(target, adapter_name, lora_config, **kwargs):
+                new_module = None
+
+                if isinstance(target, BaseTunerLayer):
+                    target_base_layer = target.get_base_layer()
+                else:
+                    target_base_layer = target
+
+                for key, custom_cls in lora_config._custom_modules.items():
+                    if isinstance(target_base_layer, key):
+                        new_module = custom_cls(target, adapter_name, **kwargs)
+                        break
+
+                return new_module
+
+            dispatchers.append(dynamic_dispatch_func)
+
+        # avoid eager bnb import
+        if is_bnb_available():
+            from tuners.lora.bnb import dispatch_bnb_8bit
+
+            dispatchers.append(dispatch_bnb_8bit)
+
+        if is_bnb_4bit_available():
+            from tuners.lora.bnb import dispatch_bnb_4bit
+
+            dispatchers.append(dispatch_bnb_4bit)
+
+        dispatchers.extend(
+            [
+                dispatch_eetq,
+                dispatch_aqlm,
+                dispatch_awq,
+                dispatch_gptq,
+                dispatch_hqq,
+                dispatch_torchao,
+                dispatch_megatron,
+                dispatch_default,
+            ]
+        )
+
+        new_module = None
+        for dispatcher in dispatchers:
+            new_module = dispatcher(target, adapter_name, lora_config=lora_config, **kwargs)
+            if new_module is not None:  # first match wins
+                break
+
+        if new_module is None:
+            # no module could be matched
+            raise ValueError(
+                f"Target module {target} is not supported. Currently, only the following modules are supported: "
+                "`torch.nn.Linear`, `torch.nn.Embedding`, `torch.nn.Conv2d`, `torch.nn.Conv3d`, "
+                "`transformers.pytorch_utils.Conv1D`."
             )
 
-    def _replace_module(self, parent, child_name, new_module, child):
+        return new_module
+
+ 
         setattr(parent, child_name, new_module)
         # It's not necessary to set requires_grad here, as that is handled by
         # _mark_only_adapters_as_trainable
@@ -98,7 +204,10 @@ class CLoraModel(BaseTuner):
             child = child.base_layer
 
         if not hasattr(new_module, "base_layer"):
-            new_module.weight = child.weight
+            if hasattr(new_module, "W_q"):  # HQQ
+                new_module.W_q = child.W_q
+            else:
+                new_module.weight = child.weight
             if hasattr(child, "bias"):
                 new_module.bias = child.bias
 
@@ -112,193 +221,15 @@ class CLoraModel(BaseTuner):
         meta = torch.device("meta")
         # dispatch to correct device
         for name, module in new_module.named_modules():
-            if self.prefix in name:
+            if (self.prefix in name) or ("ranknum" in name):
+                weight = (
+                    child.qweight
+                    if hasattr(child, "qweight")
+                    else child.W_q
+                    if hasattr(child, "W_q")
+                    else child.weight
+                    if hasattr(child, "weight")
+                    else next(child.parameters())
+                )
                 if not any(p.device == meta for p in module.parameters()):
-                    module.to(child.weight.device)
-
-    def _mark_only_adapters_as_trainable(self, model: nn.Module) -> None:
-        for n, p in model.named_parameters():
-            if self.prefix not in n:
-                p.requires_grad = False
-
-        for active_adapter in self.active_adapters:
-            bias = self.peft_config[active_adapter].bias
-            if bias == "none":
-                continue
-
-            if bias == "all":
-                for n, p in model.named_parameters():
-                    if "bias" in n:
-                        p.requires_grad = True
-            elif bias == "boft_only":
-                for name, m in model.named_modules():
-                    if isinstance(m, BOFTLayer) and hasattr(m, "bias") and m.bias is not None:
-                        m.bias.requires_grad = True
-            else:
-                raise NotImplementedError(f"Requested bias: {bias}, is not implemented.")
-
-    @staticmethod
-    def _create_new_module(boft_config, adapter_name, target, **kwargs):
-        if isinstance(target, BaseTunerLayer):
-            target_base_layer = target.get_base_layer()
-        else:
-            target_base_layer = target
-
-        if isinstance(target_base_layer, torch.nn.Linear):
-            if kwargs["fan_in_fan_out"]:
-                warnings.warn(
-                    "fan_in_fan_out is set to True but the target module is `torch.nn.Linear`. "
-                    "Setting fan_in_fan_out to False."
-                )
-                kwargs["fan_in_fan_out"] = boft_config.fan_in_fan_out = False
-            new_module = Linear(target, adapter_name, **kwargs)
-        elif isinstance(target_base_layer, torch.nn.Conv2d):
-            new_module = Conv2d(target, adapter_name, **kwargs)
-        else:
-            raise ValueError(
-                f"Target module {target} is not supported. "
-                "Currently, only `torch.nn.Linear` and `torch.nn.Conv2d` are supported."
-            )
-
-        return new_module
-
-    def __getattr__(self, name: str):
-        """Forward missing attributes to the wrapped module."""
-        try:
-            return super().__getattr__(name)  # defer to nn.Module's logic
-        except AttributeError:
-            if name == "model":  # see #1892: prevent infinite recursion if class is not initialized
-                raise
-            return getattr(self.model, name)
-
-    def get_peft_config_as_dict(self, inference: bool = False):
-        config_dict = {}
-        for key, value in self.peft_config.items():
-            config = {k: v.value if isinstance(v, Enum) else v for k, v in asdict(value).items()}
-            if inference:
-                config["inference_mode"] = True
-        config_dict[key] = config
-        return config
-
-    def _set_adapter_layers(self, enabled=True):
-        for module in self.model.modules():
-            if isinstance(module, (BaseTunerLayer, ModulesToSaveWrapper)):
-                module.enable_adapters(enabled)
-
-    def enable_adapter_layers(self):
-        self._set_adapter_layers(enabled=True)
-
-    def disable_adapter_layers(self):
-        for active_adapter in self.active_adapters:
-            val = self.peft_config[active_adapter].bias
-            if val != "none":
-                msg = (
-                    f"Careful, disabling adapter layers with bias configured to be '{val}' does not produce the same "
-                    "output as the the base model would without adaption."
-                )
-                warnings.warn(msg)
-        self._set_adapter_layers(enabled=False)
-
-    def set_adapter(self, adapter_name):
-        for module in self.model.modules():
-            if isinstance(module, BOFTLayer):
-                if module.merged:
-                    warnings.warn("Adapter cannot be set when the model is merged. Unmerging the model first.")
-                    module.unmerge()
-                module.set_adapter(adapter_name)
-        self.active_adapter = adapter_name
-
-    @staticmethod
-    def _prepare_adapter_config(peft_config, model_config):
-        if peft_config.target_modules is None:
-            if model_config["model_type"] not in TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING:
-                raise ValueError("Please specify `target_modules` in `peft_config`")
-            peft_config.target_modules = set(
-                TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING[model_config["model_type"]]
-            )
-        return peft_config
-
-    def _unload_and_optionally_merge(
-        self,
-        merge=True,
-        progressbar: bool = False,
-        safe_merge: bool = False,
-        adapter_names: Optional[List[str]] = None,
-    ):
-        if merge:
-            self._check_merge_allowed()
-
-        key_list = [key for key, _ in self.model.named_modules() if self.prefix not in key]
-        desc = "Unloading " + ("and merging " if merge else "") + "model"
-        for key in tqdm(key_list, disable=not progressbar, desc=desc):
-            try:
-                parent, target, target_name = _get_submodules(self.model, key)
-            except AttributeError:
-                continue
-            with onload_layer(target):
-                if hasattr(target, "base_layer"):
-                    if merge:
-                        target.merge(safe_merge=safe_merge, adapter_names=adapter_names)
-                    self._replace_module(parent, target_name, target.get_base_layer(), target)
-                elif isinstance(target, ModulesToSaveWrapper):
-                    # save any additional trainable modules part of `modules_to_save`
-                    new_module = target.modules_to_save[target.active_adapter]
-                    if hasattr(new_module, "base_layer"):
-                        # check if the module is itself a tuner layer
-                        if merge:
-                            new_module.merge(safe_merge=safe_merge, adapter_names=adapter_names)
-                        new_module = new_module.get_base_layer()
-                    setattr(parent, target_name, new_module)
-
-        return self.model
-
-    def delete_adapter(self, adapter_name: str) -> None:
-        """
-        Deletes an existing adapter.
-
-        Args:
-            adapter_name (str): Name of the adapter to be deleted.
-        """
-        if adapter_name not in list(self.peft_config.keys()):
-            raise ValueError(f"Adapter {adapter_name} does not exist")
-        del self.peft_config[adapter_name]
-
-        key_list = [key for key, _ in self.model.named_modules() if self.prefix not in key]
-        new_adapter = None
-        for key in key_list:
-            _, target, _ = _get_submodules(self.model, key)
-            if isinstance(target, BOFTLayer):
-                target.delete_adapter(adapter_name)
-                if new_adapter is None:
-                    new_adapter = target.active_adapters[:]
-
-        self.active_adapter = new_adapter or []
-
-    def merge_and_unload(
-        self, progressbar: bool = False, safe_merge: bool = False, adapter_names: Optional[List[str]] = None
-    ) -> torch.nn.Module:
-        r"""
-        This method merges the BOFT layers into the base model. This is needed if someone wants to use the base model
-        as a standalone model.
-
-        Args:
-            progressbar (`bool`):
-                whether to show a progressbar indicating the unload and merge process
-            safe_merge (`bool`):
-                whether to activate the safe merging check to check if there is any potential Nan in the adapter
-                weights
-            adapter_names (`List[str]`, *optional*):
-                The list of adapter names that should be merged. If None, all active adapters will be merged. Defaults
-                to `None`.
-
-        """
-        return self._unload_and_optionally_merge(
-            progressbar=progressbar, safe_merge=safe_merge, adapter_names=adapter_names
-        )
-
-    def unload(self) -> torch.nn.Module:
-        """
-        Gets back the base model by removing all the boft modules without merging. This gives back the original base
-        model.
-        """
-        return self._unload_and_optionally_merge(merge=False)
+                    module.to(weight.device)
