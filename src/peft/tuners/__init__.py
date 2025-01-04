@@ -42,6 +42,7 @@ from .prompt_tuning import PromptEmbedding, PromptTuningConfig, PromptTuningInit
 from .vblora import VBLoRAConfig, VBLoRAModel
 from .vera import VeraConfig, VeraModel
 from .xlora import XLoraConfig, XLoraModel
+from .clora import CLoraConfig, CLoraModel
 
 
 __all__ = [
@@ -55,6 +56,8 @@ __all__ = [
     "BoneModel",
     "CPTConfig",
     "CPTEmbedding",
+    "CLoraConfig", 
+    "CLoraModel",
     "EvaConfig",
     "FourierFTConfig",
     "FourierFTModel",
