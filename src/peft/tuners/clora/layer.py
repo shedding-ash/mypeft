@@ -29,13 +29,11 @@ from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 from peft.utils.integrations import dequantize_module_weight, gather_params_ctx, get_bnb_param_type
 from peft.utils.other import transpose
 
-from .config import LoraConfig
-
 # from .dora import DoraConv2dLayer, DoraConv3dLayer, DoraEmbeddingLayer, DoraLinearLayer, _DoraConvNdLayer
 
 
 
-class CLoraLayer(BaseTunerLayer):
+class CLoraLayer(LoraLayer):
     # All names of layers that may contain (trainable) adapter weights
     adapter_layer_names = ("lora_A", "lora_B", "lora_C","lora_embedding_A", "lora_embedding_B")
     # All names of other parameters that may contain adapter-related parameters
@@ -1278,7 +1276,7 @@ class Conv3d(_ConvNd):
 def dispatch_default(
     target: torch.nn.Module,
     adapter_name: str,
-    lora_config: LoraConfig,
+    lora_config,
     **kwargs,
 ) -> Optional[torch.nn.Module]:
     new_module = None

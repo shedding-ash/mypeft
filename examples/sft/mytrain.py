@@ -5,7 +5,7 @@ from typing import Optional
 
 from transformers import HfArgumentParser, set_seed
 from trl import SFTConfig, SFTTrainer
-from utils import create_and_prepare_model, create_datasets
+from myutil import create_and_prepare_model, create_datasets
 
 
 # Define and parse arguments.

@@ -3,16 +3,15 @@ import operator
 
 from peft.tuners.lora import LoraModel
 
-
-from utils import (
+from peft.utils import (
     get_quantization_config,
 )
-from import_utils import is_bnb_4bit_available, is_bnb_available
-from utils.other import get_pattern_key
+from peft.import_utils import is_bnb_4bit_available, is_bnb_available
+from peft.utils.other import get_pattern_key
 
 # layer
 from .layer import CLoraLayer, dispatch_default
-from tuners_utils import BaseTunerLayer
+from tuners.tuners_utils import BaseTunerLayer
 
 ## quantization
 from peft.tuners.lora.aqlm import dispatch_aqlm
