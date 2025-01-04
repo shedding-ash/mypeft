@@ -42,7 +42,7 @@ class CLoraLayer(LoraLayer):
     # 初始化类属性,根据传入的base_layer初始化in_features和out_features
     def __init__(self, base_layer: nn.Module, ephemeral_gpu_offload: bool = False, **kwargs) -> None:
         self.base_layer = base_layer
-        # self.r = {}
+        self.r = {}
         self.r1 = {}
         self.r2 = {}
         self.lora_alpha = {}
@@ -112,6 +112,7 @@ class CLoraLayer(LoraLayer):
     def update_layer(
         self,
         adapter_name,
+        r,
         r1,
         r2,
         lora_alpha,
@@ -445,6 +446,7 @@ class Linear(nn.Module, CLoraLayer):
         self,
         base_layer,
         adapter_name: str,
+        r,
         r1: int = 8,
         r2: int = 8,
         lora_alpha: int = 1,
@@ -458,12 +460,13 @@ class Linear(nn.Module, CLoraLayer):
         **kwargs,
     ) -> None:
         super().__init__()
-        LoraLayer.__init__(self, base_layer, **kwargs)
+        CLoraLayer.__init__(self, base_layer, **kwargs)
         self.fan_in_fan_out = fan_in_fan_out
 
         self._active_adapter = adapter_name
         self.update_layer(
             adapter_name,
+            r,
             r1,
             r2,
             lora_alpha=lora_alpha,

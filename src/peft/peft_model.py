@@ -47,6 +47,8 @@ from .tuners import (
     AdaptionPromptModel,
     BOFTModel,
     BoneModel,
+    CLoraModel,
+    CLoraModel,
     CPTEmbedding,
     FourierFTModel,
     HRAModel,
@@ -108,6 +110,7 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.VBLORA: VBLoRAModel,
     PeftType.CPT: CPTEmbedding,
     PeftType.BONE: BoneModel,
+    PeftType.CLORA: CLoraModel,
 }
 
 
