@@ -1,9 +1,8 @@
-import torch
 from __future__ import annotations
 import operator
 
-from tuners.lora.model import LoraModel
-from tuners.lora.config import LoraConfig
+from peft.tuners.lora.model import LoraModel
+from peft.tuners.lora.config import LoraConfig
 
 
 from utils import (
@@ -15,15 +14,15 @@ from utils.other import get_pattern_key
 # layer
 from .layer import Conv2d, CLoraLayer, dispatch_default
 from tuners_utils import BaseTunerLayer
-from tuners.lora.layer import LoraLayer
+from peft.tuners.lora.layer import LoraLayer
 ## quantization
-from tuners.lora.aqlm import dispatch_aqlm
-from tuners.lora.awq import dispatch_awq
-from tuners.lora.eetq import dispatch_eetq
-from tuners.lora.gptq import dispatch_gptq
-from tuners.lora.hqq import dispatch_hqq
-from tuners.lora.torchao import dispatch_torchao
-from tuners.lora.tp_layer import dispatch_megatron
+from peft.tuners.lora.aqlm import dispatch_aqlm
+from peft.tuners.lora.awq import dispatch_awq
+from peft.tuners.lora.eetq import dispatch_eetq
+from peft.tuners.lora.gptq import dispatch_gptq
+from peft.tuners.lora.hqq import dispatch_hqq
+from peft.tuners.lora.torchao import dispatch_torchao
+from peft.tuners.lora.tp_layer import dispatch_megatron
 
 class CLoraModel(LoraModel):
     """
