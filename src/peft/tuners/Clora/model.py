@@ -34,6 +34,7 @@ class CLoraModel(LoraModel):
     
     # 解析config 并用config生成一个新的adapter ,替换目标module
     # 创建kwargs，然后调用create和replace方法 
+    # 在原函数的基础上添加了r1,r2
     def _create_and_replace(
         self,
         lora_config,
@@ -128,6 +129,7 @@ class CLoraModel(LoraModel):
                 new_module.requires_grad_(False)
             self._replace_module(parent, target_name, new_module, target)
     
+    # 似乎没改 dispatcher的逻辑
     @staticmethod
     def _create_new_module(lora_config, adapter_name, target, **kwargs):
         # Collect dispatcher functions to decide what backend to use for the replaced LoRA layer. The order matters,
@@ -193,43 +195,3 @@ class CLoraModel(LoraModel):
             )
 
         return new_module
-
- 
-        setattr(parent, child_name, new_module)
-        # It's not necessary to set requires_grad here, as that is handled by
-        # _mark_only_adapters_as_trainable
-
-        # child layer wraps the original module, unpack it
-        if hasattr(child, "base_layer"):
-            child = child.base_layer
-
-        if not hasattr(new_module, "base_layer"):
-            if hasattr(new_module, "W_q"):  # HQQ
-                new_module.W_q = child.W_q
-            else:
-                new_module.weight = child.weight
-            if hasattr(child, "bias"):
-                new_module.bias = child.bias
-
-        if getattr(child, "state", None) is not None:
-            if hasattr(new_module, "base_layer"):
-                new_module.base_layer.state = child.state
-            else:
-                new_module.state = child.state
-            new_module.to(child.weight.device)
-
-        meta = torch.device("meta")
-        # dispatch to correct device
-        for name, module in new_module.named_modules():
-            if (self.prefix in name) or ("ranknum" in name):
-                weight = (
-                    child.qweight
-                    if hasattr(child, "qweight")
-                    else child.W_q
-                    if hasattr(child, "W_q")
-                    else child.weight
-                    if hasattr(child, "weight")
-                    else next(child.parameters())
-                )
-                if not any(p.device == meta for p in module.parameters()):
-                    module.to(weight.device)
