@@ -56,12 +56,11 @@ def create_datasets(tokenizer, data_args, training_args, apply_chat_template=Fal
     raw_datasets = DatasetDict()
     for split in data_args.splits.split(","):
         try:
-            # Try first if dataset on a Hub repo
             dataset = load_dataset(data_args.dataset_name, split=split)
-        except DatasetGenerationError:
-            # If not, check local dataset
+        except Exception as e:
+            print(f"Failed to load dataset from Hub: {e}")
             dataset = load_from_disk(os.path.join(data_args.dataset_name, split))
-
+            
         if "train" in split:
             raw_datasets["train"] = dataset
         elif "test" in split:

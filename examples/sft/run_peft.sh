@@ -1,8 +1,8 @@
 python train.py \
 --seed 100 \
---model_name_or_path "mistralai/Mistral-7B-v0.1" \
+--model_name_or_path "/home/liushizhuo/.cache/huggingface/transformers/hub/LLM-Research/Meta-Llama-3-8B" \
 --dataset_name "smangrul/ultrachat-10k-chatml" \
---chat_template_format "chatml" \
+--chat_template_format "default" \
 --add_special_tokens False \
 --append_concat_token False \
 --splits "train,test" \
@@ -24,18 +24,20 @@ python train.py \
 --warmup_ratio 0.0 \
 --max_grad_norm 1.0 \
 --output_dir "mistral-sft-lora" \
---per_device_train_batch_size 8 \
---per_device_eval_batch_size 8 \
+--per_device_train_batch_size 2 \
+--per_device_eval_batch_size 2 \
 --gradient_accumulation_steps 8 \
 --gradient_checkpointing True \
 --use_reentrant True \
 --dataset_text_field "content" \
 --use_peft_lora True \
 --lora_r 8 \
+--lora_r1 8 \
+--lora_r2 8 \
 --lora_alpha 16 \
 --lora_dropout 0.1 \
 --lora_target_modules "all-linear" \
---use_4bit_quantization True \
---use_nested_quant True \
+--use_4bit_quantization False \
+--use_nested_quant False \
 --bnb_4bit_compute_dtype "bfloat16" \
---use_flash_attn True
+--use_flash_attn False \
