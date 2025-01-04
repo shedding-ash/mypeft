@@ -11,7 +11,7 @@ from peft.utils.other import get_pattern_key
 
 # layer
 from .layer import CLoraLayer, dispatch_default
-from tuners.tuners_utils import BaseTunerLayer
+from peft.tuners.tuners_utils import BaseTunerLayer
 
 ## quantization
 from peft.tuners.lora.aqlm import dispatch_aqlm
