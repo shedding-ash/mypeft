@@ -1,8 +1,7 @@
 from __future__ import annotations
 import operator
 
-from peft.tuners.lora.model import LoraModel
-from peft.tuners.lora.config import LoraConfig
+from peft.tuners.lora import LoraModel
 
 
 from utils import (
@@ -12,9 +11,9 @@ from import_utils import is_bnb_4bit_available, is_bnb_available
 from utils.other import get_pattern_key
 
 # layer
-from .layer import Conv2d, CLoraLayer, dispatch_default
+from .layer import CLoraLayer, dispatch_default
 from tuners_utils import BaseTunerLayer
-from peft.tuners.lora.layer import LoraLayer
+
 ## quantization
 from peft.tuners.lora.aqlm import dispatch_aqlm
 from peft.tuners.lora.awq import dispatch_awq
