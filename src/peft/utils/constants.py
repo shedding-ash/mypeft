@@ -287,6 +287,7 @@ TRANSFORMERS_MODELS_TO_VBLORA_TARGET_MODULES_MAPPING = {
 }
 
 PEFT_TYPE_TO_PREFIX_MAPPING = {
+    PeftType.CLORA: "clora_",
     PeftType.IA3: "ia3_",
     PeftType.LORA: "lora_",
     PeftType.ADALORA: "lora_",
