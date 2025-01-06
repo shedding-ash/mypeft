@@ -210,6 +210,8 @@ def get_peft_model_state_dict(
         ]
     elif config.peft_type == PeftType.BONE:
         to_return = {k: state_dict[k] for k in state_dict if "bone_" in k}
+    elif config.peft_type == PeftType.CLORA:
+        to_return = {k: state_dict[k] for k in state_dict if "clora_" in k}
     else:
         raise ValueError(f"Unknown PEFT type passed: {config.peft_type}")
 
