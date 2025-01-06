@@ -432,7 +432,10 @@ def set_peft_model_state_dict(
                 return k
 
             peft_model_state_dict = {renamed_dora_weights(k): v for k, v in peft_model_state_dict.items()}
-
+        elif config.peft_type == PeftType.CLORA:
+            raise ValueError(
+                    "hahahahaha 还没想好!"
+                )
     elif config.is_prompt_learning or config.peft_type == PeftType.ADAPTION_PROMPT:
         peft_model_state_dict = state_dict
     elif config.peft_type == PeftType.XLORA:
