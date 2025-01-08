@@ -127,6 +127,7 @@ class CLoraLayer(LoraLayer):
         if r1 <= 0 or r2 <= 0:
             raise ValueError(f"`r1 or r2` should be a positive integer value but the value passed is {r1,r2}")
 
+        print(f"adapter_name: {adapter_name}, r: {r}, r1: {r1}, r2: {r2}")
         self.r[adapter_name] = r
         self.r1[adapter_name] = r1
         self.r2[adapter_name] = r2
@@ -141,6 +142,7 @@ class CLoraLayer(LoraLayer):
         # 关键代码，初始化ABC的权重
         self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
         self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
+        
         self.lora_C[adapter_name] = nn.Linear(r, r, bias=lora_bias)
         # self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
         # self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
@@ -428,7 +430,8 @@ class CLoraLayer(LoraLayer):
             # getting the sub-batch, passing it to LoRA layers and updating the corresponding indices of the linear
             # layer output
             sub_batch = x[sub_batch_indices_list[i]].to(lora_A.weight.dtype)
-            lora_output = lora_B(lora_C(lora_A(dropout(sub_batch)))) * scaling
+            #lora_output = lora_B(lora_C(lora_A(dropout(sub_batch)))) * scaling
+            lora_output = lora_B(lora_A(dropout(sub_batch))) * scaling
             result[sub_batch_indices_list[i]] += lora_output.to(torch_result_dtype)
 
         return result
@@ -635,7 +638,7 @@ class Linear(nn.Module, CLoraLayer):
     def forward(self, x: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
         self._check_forward_args(x, *args, **kwargs)
         adapter_names = kwargs.pop("adapter_names", None)
-
+        print("forward:", adapter_names)
         if self.disable_adapters:
             if self.merged:
                 self.unmerge()
