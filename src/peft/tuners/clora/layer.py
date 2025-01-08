@@ -143,7 +143,7 @@ class CLoraLayer(LoraLayer):
         self.lora_A[adapter_name] = nn.Linear(self.in_features, r1, bias=False)
         self.lora_B[adapter_name] = nn.Linear(r2, self.out_features, bias=lora_bias)
         
-        self.lora_C[adapter_name] = nn.Linear(r1, r2, bias=lora_bias)
+        self.lora_C[adapter_name] = nn.Linear(r1, self.out_features, bias=lora_bias)
         # self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
         # self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
@@ -662,8 +662,9 @@ class Linear(nn.Module, CLoraLayer):
                 x = x.to(lora_A.weight.dtype)
 
                 if not self.use_dora[active_adapter]:
-                    result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
+                    #result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
                     #result = result + lora_B(lora_A(dropout(x))) * scaling
+                    result = result + lora_C(lora_A(dropout(x))) * scaling
                 else:
                     if isinstance(dropout, nn.Identity) or not self.training:
                         base_result = result
