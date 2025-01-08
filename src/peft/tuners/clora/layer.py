@@ -126,7 +126,7 @@ class CLoraLayer(LoraLayer):
         if r1 <= 0 or r2 <= 0:
             raise ValueError(f"`r1 or r2` should be a positive integer value but the value passed is {r1,r2}")
 
-        #self.r[adapter_name] = r
+        self.r[adapter_name] = r
         self.r1[adapter_name] = r1
         self.r2[adapter_name] = r2
         self.lora_alpha[adapter_name] = lora_alpha
@@ -138,16 +138,18 @@ class CLoraLayer(LoraLayer):
         self.lora_dropout.update(nn.ModuleDict({adapter_name: lora_dropout_layer}))
         
         # 关键代码，初始化ABC的权重
-        self.lora_A[adapter_name] = nn.Linear(self.in_features, r1, bias=False)
-        self.lora_B[adapter_name] = nn.Linear(r2, self.out_features, bias=lora_bias)
-        self.lora_C[adapter_name] = nn.Linear(r1, r2, bias=lora_bias)
+        self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
+        self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
+        self.lora_C[adapter_name] = nn.Linear(r, r, bias=lora_bias)
+        # self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
+        # self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
 
         # 待敲定的点1 scaling的计算根据r1还是r2，先尝试r2
         if use_rslora:
-            self.scaling[adapter_name] = lora_alpha / math.sqrt(r2)
+            self.scaling[adapter_name] = lora_alpha / math.sqrt(r)
         else:
-            self.scaling[adapter_name] = lora_alpha / r2
+            self.scaling[adapter_name] = lora_alpha / r
 
         # for inits that require access to the base weight, use gather_param_ctx so that the weight is gathered when using DeepSpeed
         # adapter中lora的初始化方式，先只改默认的初始化方式，即reset_lora_parameters
@@ -186,13 +188,14 @@ class CLoraLayer(LoraLayer):
                 # https://github.com/microsoft/LoRA/blob/a0a92e0f26c067cf94747bdbf1ce73793fa44d19/loralib/layers.py#L124
                 nn.init.kaiming_uniform_(self.lora_A[adapter_name].weight, a=math.sqrt(5))
             elif init_lora_weights.lower() == "gaussian":
-                nn.init.normal_(self.lora_A[adapter_name].weight, std=1 / self.r1[adapter_name])
+                nn.init.normal_(self.lora_A[adapter_name].weight, std=1 / self.r[adapter_name])
             else:
                 raise ValueError(f"Unknown initialization {init_lora_weights=}")
             nn.init.zeros_(self.lora_B[adapter_name].weight)
             nn.init.zeros_(self.lora_C[adapter_name].weight)
             if self.lora_bias[adapter_name]:
                 nn.init.zeros_(self.lora_B[adapter_name].bias)
+                nn.init.zeros_(self.lora_C[adapter_name].bias)
         if adapter_name in self.lora_embedding_A.keys():
             # Initialize A to zeros and B the same way as the default for nn.Embedding, see:
             # https://github.com/microsoft/LoRA/blob/4c0333854cb905966f8cc4e9a74068c1e507c7b7/loralib/layers.py#L59-L60
