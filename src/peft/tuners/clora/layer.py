@@ -140,10 +140,10 @@ class CLoraLayer(LoraLayer):
         self.lora_dropout.update(nn.ModuleDict({adapter_name: lora_dropout_layer}))
         
         # 关键代码，初始化ABC的权重
-        self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
-        self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
+        self.lora_A[adapter_name] = nn.Linear(self.in_features, r1, bias=False)
+        self.lora_B[adapter_name] = nn.Linear(r2, self.out_features, bias=lora_bias)
         
-        self.lora_C[adapter_name] = nn.Linear(r, r, bias=lora_bias)
+        self.lora_C[adapter_name] = nn.Linear(r1, r2, bias=lora_bias)
         # self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
         # self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
@@ -152,7 +152,7 @@ class CLoraLayer(LoraLayer):
         if use_rslora:
             self.scaling[adapter_name] = lora_alpha / math.sqrt(r)
         else:
-            self.scaling[adapter_name] = lora_alpha / r
+            self.scaling[adapter_name] = lora_alpha / r2
 
         # for inits that require access to the base weight, use gather_param_ctx so that the weight is gathered when using DeepSpeed
         # adapter中lora的初始化方式，先只改默认的初始化方式，即reset_lora_parameters
@@ -1328,7 +1328,7 @@ def dispatch_default(
         )
 
         # 生成日志信息
-        logging.info("DEBUG 第三次修改")
+        logging.info("DEBUG 第四次修改")
     elif isinstance(target_base_layer, Conv1D):
         if not kwargs["fan_in_fan_out"]:
             warnings.warn(
