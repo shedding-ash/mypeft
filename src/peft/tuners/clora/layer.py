@@ -499,11 +499,11 @@ class Linear(nn.Module, CLoraLayer):
                 The list of adapter names that should be merged. If None, all active adapters will be merged. Defaults
                 to `None`.
         """
+        raise ValueError(f"查看merge是否被调用")
         adapter_names = check_adapters_to_merge(self, adapter_names)
         if not adapter_names:
             # no adapter to merge
             return
-
         for active_adapter in adapter_names:
             if active_adapter in self.lora_A.keys():
                 base_layer = self.get_base_layer()
@@ -577,6 +577,7 @@ class Linear(nn.Module, CLoraLayer):
         """
         This method unmerges all merged adapter layers from the base weights.
         """
+        raise ValueError(f"查看unmerge是否被调用")
         if not self.merged:
             warnings.warn("Already unmerged. Nothing to do.")
             return
@@ -638,7 +639,6 @@ class Linear(nn.Module, CLoraLayer):
     def forward(self, x: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
         self._check_forward_args(x, *args, **kwargs)
         adapter_names = kwargs.pop("adapter_names", None)
-        print("forward:", adapter_names)
         if self.disable_adapters:
             if self.merged:
                 self.unmerge()
@@ -662,8 +662,8 @@ class Linear(nn.Module, CLoraLayer):
                 x = x.to(lora_A.weight.dtype)
 
                 if not self.use_dora[active_adapter]:
-                    #result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
-                    result = result + lora_B(lora_A(dropout(x))) * scaling
+                    result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
+                    #result = result + lora_B(lora_A(dropout(x))) * scaling
                 else:
                     if isinstance(dropout, nn.Identity) or not self.training:
                         base_result = result
@@ -1328,7 +1328,7 @@ def dispatch_default(
         )
 
         # 生成日志信息
-        logging.info("DEBUG 第四次修改")
+        logging.info("DEBUG 第五次修改")
     elif isinstance(target_base_layer, Conv1D):
         if not kwargs["fan_in_fan_out"]:
             warnings.warn(
