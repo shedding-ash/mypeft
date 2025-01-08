@@ -1314,7 +1314,7 @@ def dispatch_default(
             kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
         kwargs.update(lora_config.loftq_config)
         from peft.tuners.lora import Linear
-        print(help(Linear))
+        print(Linear)
         new_module = Linear(target, adapter_name, **kwargs)
         # 配置日志格式
         logging.basicConfig(
