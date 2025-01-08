@@ -451,8 +451,8 @@ class Linear(nn.Module, CLoraLayer):
         base_layer,
         adapter_name: str,
         r,
-        r1: int = 8,
-        r2: int = 8,
+        r1,
+        r2,
         lora_alpha: int = 1,
         lora_dropout: float = 0.0,
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
@@ -1313,6 +1313,8 @@ def dispatch_default(
             )
             kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
         kwargs.update(lora_config.loftq_config)
+        from peft.tuners.lora import Linear
+        print(help(Linear))
         new_module = Linear(target, adapter_name, **kwargs)
         # 配置日志格式
         logging.basicConfig(
