@@ -143,7 +143,7 @@ class CLoraLayer(LoraLayer):
         self.lora_A[adapter_name] = nn.Linear(self.in_features, r1, bias=False)
         self.lora_B[adapter_name] = nn.Linear(r2, self.out_features, bias=lora_bias)
         
-        self.lora_C[adapter_name] = nn.Linear(r1, self.out_features, bias=lora_bias)
+        self.lora_C[adapter_name] = nn.Linear(r1, r2, bias=lora_bias)
         # self.lora_A[adapter_name] = nn.Linear(self.in_features, r, bias=False)
         # self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=lora_bias)
         self.lora_bias[adapter_name] = lora_bias
@@ -190,12 +190,13 @@ class CLoraLayer(LoraLayer):
                 # initialize A the same way as the default for nn.Linear and B to zero
                 # https://github.com/microsoft/LoRA/blob/a0a92e0f26c067cf94747bdbf1ce73793fa44d19/loralib/layers.py#L124
                 nn.init.kaiming_uniform_(self.lora_A[adapter_name].weight, a=math.sqrt(5))
+                nn.init.kaiming_uniform_(self.lora_C[adapter_name].weight, a=math.sqrt(5))
             elif init_lora_weights.lower() == "gaussian":
                 nn.init.normal_(self.lora_A[adapter_name].weight, std=1 / self.r[adapter_name])
+                nn.init.normal_(self.lora_C[adapter_name].weight, std=1 / self.r[adapter_name])
             else:
                 raise ValueError(f"Unknown initialization {init_lora_weights=}")
             nn.init.zeros_(self.lora_B[adapter_name].weight)
-            nn.init.zeros_(self.lora_C[adapter_name].weight)
             if self.lora_bias[adapter_name]:
                 nn.init.zeros_(self.lora_B[adapter_name].bias)
                 nn.init.zeros_(self.lora_C[adapter_name].bias)
@@ -662,9 +663,8 @@ class Linear(nn.Module, CLoraLayer):
                 x = x.to(lora_A.weight.dtype)
 
                 if not self.use_dora[active_adapter]:
-                    #result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
+                    result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
                     #result = result + lora_B(lora_A(dropout(x))) * scaling
-                    result = result + lora_C(lora_A(dropout(x))) * scaling
                 else:
                     if isinstance(dropout, nn.Identity) or not self.training:
                         base_result = result
@@ -1329,7 +1329,7 @@ def dispatch_default(
         )
 
         # 生成日志信息
-        logging.info("DEBUG 第五次修改")
+        logging.info("DEBUG 第qi次修改")
     elif isinstance(target_base_layer, Conv1D):
         if not kwargs["fan_in_fan_out"]:
             warnings.warn(
