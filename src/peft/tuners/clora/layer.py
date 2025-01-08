@@ -619,7 +619,8 @@ class Linear(nn.Module, CLoraLayer):
             weight_B = weight_B.float()
             weight_C = weight_C.float()
 
-        output_tensor = transpose(weight_B @ (weight_C @ weight_A), self.fan_in_fan_out) * self.scaling[adapter]
+        #output_tensor = transpose(weight_B @ (weight_C @ weight_A), self.fan_in_fan_out) * self.scaling[adapter]
+        output_tensor = transpose(weight_B @ weight_A), self.fan_in_fan_out * self.scaling[adapter]
 
         if cast_to_fp32:
             output_tensor = output_tensor.to(dtype=dtype)
@@ -1313,8 +1314,8 @@ def dispatch_default(
             )
             kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
         kwargs.update(lora_config.loftq_config)
-        from peft.tuners.lora import Linear
-        print(Linear)
+        # from peft.tuners.lora import Linear
+        # print(Linear)
         new_module = Linear(target, adapter_name, **kwargs)
         # 配置日志格式
         logging.basicConfig(
@@ -1324,7 +1325,7 @@ def dispatch_default(
         )
 
         # 生成日志信息
-        logging.info("DEBUG 第二次修改")
+        logging.info("DEBUG 第三次修改")
     elif isinstance(target_base_layer, Conv1D):
         if not kwargs["fan_in_fan_out"]:
             warnings.warn(
