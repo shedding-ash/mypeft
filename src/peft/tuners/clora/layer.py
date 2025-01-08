@@ -13,6 +13,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+import logging
 import math
 import warnings
 from typing import Any, Optional, Union
@@ -657,7 +658,8 @@ class Linear(nn.Module, CLoraLayer):
                 x = x.to(lora_A.weight.dtype)
 
                 if not self.use_dora[active_adapter]:
-                    result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
+                    #result = result + lora_B(lora_C(lora_A(dropout(x)))) * scaling
+                    result = result + lora_B(lora_A(dropout(x))) * scaling
                 else:
                     if isinstance(dropout, nn.Identity) or not self.training:
                         base_result = result
@@ -1312,6 +1314,15 @@ def dispatch_default(
             kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
         kwargs.update(lora_config.loftq_config)
         new_module = Linear(target, adapter_name, **kwargs)
+        # 配置日志格式
+        logging.basicConfig(
+            level=logging.INFO,  # 设置日志级别为 INFO
+            format="[%(levelname)s] %(asctime)s >> %(message)s",  # 设置日志格式
+            datefmt="%Y-%m-%d %H:%M:%S",  # 设置时间戳格式
+        )
+
+        # 生成日志信息
+        logging.info("DEBUG 第二次修改")
     elif isinstance(target_base_layer, Conv1D):
         if not kwargs["fan_in_fan_out"]:
             warnings.warn(
