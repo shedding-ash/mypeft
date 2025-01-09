@@ -150,7 +150,7 @@ class CLoraLayer(LoraLayer):
 
         # 待敲定的点1 scaling的计算根据r1还是r2，先尝试r2
         if use_rslora:
-            self.scaling[adapter_name] = lora_alpha / math.sqrt(r)
+            self.scaling[adapter_name] = lora_alpha / math.sqrt(r2)
         else:
             self.scaling[adapter_name] = lora_alpha / r2
 
@@ -431,8 +431,8 @@ class CLoraLayer(LoraLayer):
             # getting the sub-batch, passing it to LoRA layers and updating the corresponding indices of the linear
             # layer output
             sub_batch = x[sub_batch_indices_list[i]].to(lora_A.weight.dtype)
-            #lora_output = lora_B(lora_C(lora_A(dropout(sub_batch)))) * scaling
-            lora_output = lora_B(lora_A(dropout(sub_batch))) * scaling
+            lora_output = lora_B(lora_C(lora_A(dropout(sub_batch)))) * scaling
+            #lora_output = lora_B(lora_A(dropout(sub_batch))) * scaling
             result[sub_batch_indices_list[i]] += lora_output.to(torch_result_dtype)
 
         return result
@@ -500,7 +500,6 @@ class Linear(nn.Module, CLoraLayer):
                 The list of adapter names that should be merged. If None, all active adapters will be merged. Defaults
                 to `None`.
         """
-        raise ValueError(f"查看merge是否被调用")
         adapter_names = check_adapters_to_merge(self, adapter_names)
         if not adapter_names:
             # no adapter to merge
@@ -578,7 +577,6 @@ class Linear(nn.Module, CLoraLayer):
         """
         This method unmerges all merged adapter layers from the base weights.
         """
-        raise ValueError(f"查看unmerge是否被调用")
         if not self.merged:
             warnings.warn("Already unmerged. Nothing to do.")
             return
@@ -624,8 +622,8 @@ class Linear(nn.Module, CLoraLayer):
             weight_B = weight_B.float()
             weight_C = weight_C.float()
 
-        #output_tensor = transpose(weight_B @ (weight_C @ weight_A), self.fan_in_fan_out) * self.scaling[adapter]
-        output_tensor = transpose(weight_B @ weight_A), self.fan_in_fan_out * self.scaling[adapter]
+        output_tensor = transpose(weight_B @ (weight_C @ weight_A), self.fan_in_fan_out) * self.scaling[adapter]
+        #output_tensor = transpose(weight_B @ weight_A), self.fan_in_fan_out * self.scaling[adapter]
 
         if cast_to_fp32:
             output_tensor = output_tensor.to(dtype=dtype)
@@ -1321,15 +1319,6 @@ def dispatch_default(
         # from peft.tuners.lora import Linear
         # print(Linear)
         new_module = Linear(target, adapter_name, **kwargs)
-        # 配置日志格式
-        logging.basicConfig(
-            level=logging.INFO,  # 设置日志级别为 INFO
-            format="[%(levelname)s] %(asctime)s >> %(message)s",  # 设置日志格式
-            datefmt="%Y-%m-%d %H:%M:%S",  # 设置时间戳格式
-        )
-
-        # 生成日志信息
-        logging.info("DEBUG 第qi次修改")
     elif isinstance(target_base_layer, Conv1D):
         if not kwargs["fan_in_fan_out"]:
             warnings.warn(
