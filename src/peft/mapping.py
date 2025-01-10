@@ -113,7 +113,7 @@ PEFT_TYPE_TO_CONFIG_MAPPING: dict[str, type[PeftConfig]] = {
     "VBLORA": VBLoRAConfig,
     "CPT": CPTConfig,
     "BONE": BoneConfig,
-    "CLora": CLoraConfig,
+    "CLORA": CLoraConfig,
 }
 
 PEFT_TYPE_TO_TUNER_MAPPING: dict[str, type[BaseTuner]] = {
@@ -133,7 +133,7 @@ PEFT_TYPE_TO_TUNER_MAPPING: dict[str, type[BaseTuner]] = {
     "VBLORA": VBLoRAModel,
     "CPT": CPTEmbedding,
     "BONE": BoneModel,
-    "CLora": CLoraModel,
+    "CLORA": CLoraModel,
 }
 
 
