@@ -31,6 +31,8 @@ from .peft_model import (
     PeftModelForTokenClassification,
 )
 from .tuners import (
+    CLoraConfig,
+    CLoraModel,
     AdaLoraConfig,
     AdaLoraModel,
     AdaptionPromptConfig,
@@ -90,6 +92,7 @@ PEFT_TYPE_TO_CONFIG_MAPPING: dict[str, type[PeftConfig]] = {
     "POLY": PolyConfig,
     "LN_TUNING": LNTuningConfig,
     "VERA": VeraConfig,
+    "CLORA": CLoraConfig,
 }
 
 PEFT_TYPE_TO_TUNER_MAPPING: dict[str, type[_BaseTuner]] = {
@@ -103,6 +106,7 @@ PEFT_TYPE_TO_TUNER_MAPPING: dict[str, type[_BaseTuner]] = {
     "POLY": PolyModel,
     "LN_TUNING": LNTuningModel,
     "VERA": VeraModel,
+    "CLORA": CLoraModel,
 }
 
 

@@ -40,6 +40,7 @@ from transformers.utils import PushToHubMixin
 from . import __version__
 from .config import PeftConfig
 from .tuners import (
+    CLoraModel,
     AdaLoraModel,
     AdaptionPromptModel,
     BOFTModel,
@@ -91,6 +92,7 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.POLY: PolyModel,
     PeftType.LN_TUNING: LNTuningModel,
     PeftType.VERA: VeraModel,
+    PeftType.CLORA: CLoraModel,
 }
 
 

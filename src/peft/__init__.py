@@ -48,6 +48,8 @@ from .peft_model import (
     get_model_status,
 )
 from .tuners import (
+    CLoraConfig,
+    CLoraModel,
     AdaptionPromptConfig,
     AdaptionPromptModel,
     LoraConfig,
